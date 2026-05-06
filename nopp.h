@@ -27,6 +27,8 @@
 #  include <unistd.h>
 #endif
 
+#define NOPP_ADD_SUBMODULE(include_path)
+
 using i8  = int8_t;
 using i16 = int16_t;
 using i32 = int32_t;
@@ -401,6 +403,10 @@ namespace nopp {
         [[nodiscard]] const std::string& program() const;
     };
 
+    inline std::ostream& operator<<(std::ostream& os, const Cmd& cmd) {
+        return os << cmd.render();
+    }
+
     class Process {
     public:
         static constexpr pid_t invalid = -1;
@@ -533,7 +539,256 @@ namespace nopp {
     };
 }
 
+
+
+
+
+enum class TargetType {
+    STATIC_LIB,
+    EXECUTABLE
+};
+
+std::ostream& operator<<(std::ostream& os, const TargetType& t) {
+    switch (t) {
+        case TargetType::STATIC_LIB:
+            return os << "STATIC_LIB";
+        case TargetType::EXECUTABLE:
+            return os << "EXECUTABLE";
+    }
+    return os << "UNKNOWN";
+}
+
+class Target {
+public:
+    std::string target_name;
+    nopp::path  output_path;
+    TargetType  target_type;
+
+    bool publish_includes = false;
+    bool publish_defines = false;
+
+    Target(const std::string& _target_name, const nopp::path& _output_path, const TargetType _target_type) :
+    target_name(_target_name), output_path(_output_path), target_type(_target_type) {
+        reformat_output_path();
+    }
+
+private:
+    std::vector<nopp::path>    include_paths;
+    std::vector<nopp::path>    src_files;
+    std::vector<std::string>   defines;
+    std::vector<const Target*> dependencies;
+
+    bool built = false;
+
+public:
+    void reformat_output_path() {
+        nopp::mkdir_if_not_exists(output_path);
+        LOG_ASSERT(nopp::is_directory(output_path) && "OUTPUT PATH MUST BE A DIRECTORY");
+        if (!output_path.is_absolute()) {
+            output_path = nopp::absolute(output_path);
+        }
+    }
+
+    nopp::path obj_path(const nopp::path& src) const {
+        return nopp::absolute(output_path) / (src.filename().stem().string() + ".o");
+    }
+
+    bool compile_objects(nopp::ProcessList& procs) {
+        nopp::Cmd cmd;
+        for (nopp::path& src_file : src_files) {
+            cmd.append("g++");
+            cmd.append("-o", obj_path(src_file).string());
+            cmd.append("-c", src_file.string());
+            for (auto& p : include_paths) cmd.append("-I" + p.string());
+            _include_dependencies_(cmd);
+            for (auto& d : defines) cmd.append("-D" + d);
+            _include_defines_(cmd);
+            if (!cmd.run({.async = &procs})) return false;
+        }
+        return true;
+    }
+
+    void print_all() {
+        nopp::println("{} {} - {}", target_type, target_name, output_path.string());
+        nopp::println("    Include Paths:");
+        for (nopp::path& p : include_paths) {
+            nopp::println("        {}", p.string());
+        }
+        nopp::println("    Source Files:");
+        for (nopp::path& p : src_files) {
+            nopp::println("        {}", p.string());
+        }
+        nopp::println("    Defines:");
+        for (std::string& s : defines) {
+            nopp::println("        {}", s);
+        }
+        nopp::println("    Dependencies:");
+        for (const Target* t : dependencies) {
+            nopp::println("        library: {}", t->target_name);
+            nopp::println("        located: {}", t->output_path);
+        }
+    }
+
+    bool add_include_path(const nopp::path& include_path) {
+        LOG_ASSERT(nopp::is_directory(include_path) && "INCLUDE PATH MUST BE A DIRECTORY");
+        include_paths.emplace_back(nopp::absolute(include_path));
+        return true;
+    }
+
+    bool add_src(const nopp::path& src_dir) {
+        if (nopp::is_directory(src_dir)) {
+            nopp::walk_dir(src_dir, [this](const auto& entry) {
+                if (entry.path().extension() == ".cpp")
+                    src_files.emplace_back(nopp::absolute(entry.path()));
+                return nopp::WalkAction::Cont;
+            });
+        } else {
+            src_files.emplace_back(nopp::absolute(src_dir));
+        }
+        return true;
+    }
+
+    bool add_dependency(const Target* dependency) {
+        dependencies.emplace_back(dependency);
+        return true;
+    }
+
+    bool add_dependencies(const std::vector<Target*>& dependency_list) {
+        for (const Target* t : dependency_list) {
+            add_dependency(t);
+        }
+        return true;
+    }
+
+    void _include_defines_(nopp::Cmd& cmd) const {
+        if (publish_defines) {
+            for (const std::string& define : defines) {
+                std::stringstream ss;
+                ss << "-D" << define;
+                cmd.append(ss.str());
+            }
+        }
+
+        for (const Target* t : dependencies) {
+            t->_include_defines_(cmd);
+        }
+    }
+
+    void _include_dependencies_(nopp::Cmd& cmd) const {
+        if (publish_includes) {
+            for (const nopp::path& include_path : include_paths) {
+                std::stringstream ss;
+                ss << "-I" << include_path.string();
+                cmd.append(ss.str());
+            }
+        }
+
+        for (const Target* t : dependencies) {
+            t->_include_dependencies_(cmd);
+        }
+    }
+
+    void _link_dependencies_(nopp::Cmd& cmd) const {
+        if (dependencies.empty()) {
+            LOG_ASSERT(built && "dependency not built before linking");
+            std::stringstream ss;
+            ss << "-L" << output_path.string();
+            cmd.append(ss.str());
+            ss.str("");
+            ss.clear();
+            ss << "-l" << target_name;
+            cmd.append(ss.str());
+            return;
+        }
+
+        for (const Target* t : dependencies) {
+            LOG_ASSERT(t->built && "dependency not built before linking");
+            t->_link_dependencies_(cmd);
+        }
+    }
+
+    bool build() {
+        LOG_INFO("Building {} {}", target_type, target_name);
+
+        nopp::Cmd cmd;
+        nopp::ProcessList procs;
+
+        bool success = true;
+
+        switch (target_type) {
+            case TargetType::STATIC_LIB: {
+                LOG_INFO("    {}: combining into .a library", target_name);
+                cmd.append("ar", "-rcs");
+                cmd.append((output_path / ("lib" + target_name + ".a")).string());
+                for (auto& src : src_files)
+                    cmd.append(obj_path(src).string());
+                success = cmd.run();
+            } break;
+
+            case TargetType::EXECUTABLE: {
+                LOG_INFO("    {}: linking executable", target_name);
+                cmd.append("g++");
+                cmd.append("-o", (output_path / target_name).string());
+                for (auto& src : src_files)
+                    cmd.append(obj_path(src).string());
+                _link_dependencies_(cmd);
+                success = cmd.run();
+            } break;
+
+            default:
+                UNREACHABLE();
+        }
+
+        if (success) { built = true; }
+
+        return success;
+    }
+
+    [[nodiscard]] bool run() const {
+        LOG_ASSERT(target_type == TargetType::EXECUTABLE && "TARGET_TYPE MUST BE EXECUTABLE TO RUN");
+        nopp::Cmd cmd;
+        const nopp::path executable_path = output_path / target_name;
+        cmd.append(executable_path.string());
+        return cmd.run();
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #endif //NOPP_NOPP_H
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -757,7 +1012,7 @@ namespace nopp {
             return std::nullopt;
         }
 
-        LOG_INFO("CMD: {}", cmd.render());
+        LOG_DEBUG("CMD: {}", cmd.render());
 
         const pid_t c_pid = ::fork();
         if (c_pid < 0) {
