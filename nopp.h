@@ -108,19 +108,19 @@ namespace nopp {
     constexpr auto ANSI_RESET     =  "\033[0m";
 
     template<typename... Args>
-    std::string stringPrint(const std::string& fmt, Args&... args);
+    std::string stringPrint(const std::string& fmt, Args&&... args);
 
     template<typename... Args>
-    void print(const std::string& fmt, Args&... args);
+    void print(const std::string& fmt, Args&&... args);
 
     template<typename... Args>
-    void print(std::ostream& os, const std::string& fmt, Args&... args);
+    void print(std::ostream& os, const std::string& fmt, Args&&... args);
 
     template<typename... Args>
-    void println(const std::string& fmt, Args&... args);
+    void println(const std::string& fmt, Args&&... args);
 
     template<typename... Args>
-    void println(std::ostream& os, const std::string& fmt, Args&... args);
+    void println(std::ostream& os, const std::string& fmt, Args&&... args);
 
 #define LOG_FATAL(fmt, ...) nopp::_impl_log_fatal(fmt, __FILE__, __LINE__, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) nopp::_impl_log_error(fmt, __FILE__, __LINE__, ##__VA_ARGS__)
@@ -201,7 +201,7 @@ namespace nopp {
     void fprint_impl(std::ostream& os, const std::string& fmt, size_t pos, const T& value, Args&&... args);
     inline std::string fStringPrint(std::ostringstream& ss, const std::string& fmt, size_t pos);
     template<typename T, typename... Args>
-    std::string fStringPrint(std::ostringstream& ss, const std::string& fmt, size_t pos, T& value, Args&... args);
+    std::string fStringPrint(std::ostringstream& ss, const std::string& fmt, size_t pos, T& value, Args&&... args);
 
     template<typename... Args>
     void _impl_log(const LogMeta& meta, const std::string& fmt, const char* file, const int line, const Args&... args) {
@@ -300,30 +300,30 @@ namespace nopp {
         fprint_impl(os, fmt, next, std::forward<Args>(args)...);
     }
     template<typename T, typename... Args>
-    std::string fStringPrint(std::ostringstream& ss, const std::string& fmt, const size_t pos, T& value, Args&... args) {
+    std::string fStringPrint(std::ostringstream& ss, const std::string& fmt, const size_t pos, T& value, Args&&... args) {
         fprint_impl(ss, fmt, pos, value, std::forward<Args>(args)...);
         return ss.str();
     }
     template<typename... Args>
-    std::string stringPrint(const std::string& fmt, Args&... args) {
+    std::string stringPrint(const std::string& fmt, Args&&... args) {
         std::ostringstream ss;
-        return fStringPrint(ss, fmt, 0, args...);
+        return fStringPrint(ss, fmt, 0, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void print(const std::string& fmt, Args&... args) {
+    void print(const std::string& fmt, Args&&... args) {
         fprint_impl(std::cout, fmt, 0, args...);
     }
     template<typename... Args>
-    void print(std::ostream& os, const std::string& fmt, Args&... args) {
+    void print(std::ostream& os, const std::string& fmt, Args&&... args) {
         fprint_impl(os, fmt, 0, args...);
     }
     template<typename... Args>
-    void println(const std::string& fmt, Args&... args) {
+    void println(const std::string& fmt, Args&&... args) {
         fprint_impl(std::cout, fmt, 0, args...);
         std::cout << std::endl;
     }
     template<typename... Args>
-    void println(std::ostream& os, const std::string& fmt, Args&... args) {
+    void println(std::ostream& os, const std::string& fmt, Args&&... args) {
         fprint_impl(os, fmt, 0, args...);
         os << std::endl;
     }
