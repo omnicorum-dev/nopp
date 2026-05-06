@@ -829,7 +829,7 @@ namespace nopp {
 
         // Recompile
         Cmd cmd;
-        cmd.append("c++", "-std=c++17", "-o", binary_path.string());
+        cmd.append("c++", "-std=c++20", "-o", binary_path.string());
         for (const auto& src : sources)
             cmd.append(src.string());
 
