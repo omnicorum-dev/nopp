@@ -27,7 +27,8 @@
 #  include <unistd.h>
 #endif
 
-#define NOPP_ADD_SUBMODULE(include_path)
+#define cur_file nopp::absolute(nopp::path(__FILE__))
+#define cur_dir  cur_file.parent_path()
 
 using i8  = int8_t;
 using i16 = int16_t;
@@ -594,6 +595,7 @@ public:
     }
 
     bool compile_objects(nopp::ProcessList& procs) {
+        LOG_INFO("    {}: building .o files", target_name);
         nopp::Cmd cmd;
         for (nopp::path& src_file : src_files) {
             cmd.append("g++");
@@ -714,6 +716,8 @@ public:
         nopp::ProcessList procs;
 
         bool success = true;
+
+        compile_objects(procs);
 
         switch (target_type) {
             case TargetType::STATIC_LIB: {
