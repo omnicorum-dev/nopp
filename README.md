@@ -40,8 +40,6 @@ f32, f64            // float / double
 
 Common constants are also provided: `pi_f32`, `tau_f64`, `e_f64`, `gold_big_f32`, `machine_epsilon_f64`, min/max values for all integer types, etc.
 
----
-
 ### Logging
 
 A lightweight, colored, leveled logger that writes to `stderr` and optionally to a log file.
@@ -76,8 +74,6 @@ UNREACHABLE(); // logs + terminates if executed
 
 All log events are also stored in `nopp::log_handler` (a `std::vector<LogEvent>`) for programmatic inspection.
 
----
-
 ### Formatted Printing
 
 A format-style print system compatible with C++17, supporting alignment, padding, numeric bases, and precision.
@@ -107,8 +103,6 @@ std::string s = nopp::stringPrint("{:>10.3f}", value);
 | `e` / `E` | `{:e}` | Scientific notation |
 
 Escaped braces: `{{` → `{`, `}}` → `}`.
-
----
 
 ### File System
 
@@ -155,8 +149,6 @@ if (nopp::needs_rebuild("build/app", inputs)) {
 
 Returns `true` if the output is missing or any input is newer than the output.
 
----
-
 ### Process / Build System
 
 Spawn and manage child processes, build command lines, and parallelize work.
@@ -193,8 +185,6 @@ int main(int argc, char** argv) {
 ```
 
 If the source file is newer than the compiled binary, it recompiles itself and re-executes transparently — inspired by the [nob.h](https://github.com/tsoding/nob.h) pattern.
-
----
 
 ### Benchmarking & Timing
 
