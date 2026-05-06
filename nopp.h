@@ -446,8 +446,8 @@ namespace nopp {
 
     void go_rebuild_urself(int argc, char** argv, std::initializer_list<path> sources);
 
-#define NOPP_REBUILD_URSELF(argc, argv) \
-    nopp::go_rebuild_urself((argc), (argv), { __FILE__ })
+#define NOPP_REBUILD_URSELF(argc, argv, ...) \
+    nopp::go_rebuild_urself((argc), (argv), { __FILE__ }, { __VA_ARGS__ })
 }
 
 
@@ -548,7 +548,7 @@ enum class TargetType {
     EXECUTABLE
 };
 
-std::ostream& operator<<(std::ostream& os, const TargetType& t) {
+inline std::ostream& operator<<(std::ostream& os, const TargetType& t) {
     switch (t) {
         case TargetType::STATIC_LIB:
             return os << "STATIC_LIB";
@@ -1052,7 +1052,10 @@ namespace nopp {
         return success;
     }
 
-    inline void go_rebuild_urself(const int argc, char** argv, const std::initializer_list<path> sources)
+    inline void go_rebuild_urself(
+        const int argc, char** argv,
+        const std::initializer_list<path> sources,
+        const std::initializer_list<path> watch = {})
     {
         path binary_path = argv[0];
 
@@ -1061,15 +1064,17 @@ namespace nopp {
             binary_path += ".exe";
 #endif
 
-        // Check if any source is newer than the binary
         const auto bin_time = std::filesystem::last_write_time(binary_path);
         bool needs_rebuild  = false;
-        for (const auto& src : sources) {
-            if (std::filesystem::last_write_time(src) > bin_time) {
-                needs_rebuild = true;
-                break;
-            }
-        }
+
+        auto check = [&](const path& p) {
+            std::error_code ec;
+            const auto t = std::filesystem::last_write_time(p, ec);
+            if (!ec && t > bin_time) needs_rebuild = true;
+        };
+
+        for (const auto& src : sources) check(src);
+        for (const auto& w : watch)     check(w);
 
         if (!needs_rebuild) return;
 
@@ -1082,24 +1087,24 @@ namespace nopp {
             std::exit(1);
         }
 
-        // Recompile
         Cmd cmd;
         cmd.append("c++", "-std=c++20", "-o", binary_path.string());
         for (const auto& src : sources)
             cmd.append(src.string());
 
         if (!cmd.run()) {
-            // Restore old binary on failure
             std::filesystem::rename(old_binary, binary_path);
             std::exit(1);
         }
 
-        // Re-execute the new binary with the same arguments
-        cmd.append(binary_path.string());
-        for (int i = 1; i < argc; ++i)
-            cmd.append(argv[i]);
+        std::filesystem::remove(old_binary, ec);
 
-        if (!cmd.run()) std::exit(1);
+        Cmd reexec;
+        reexec.append(binary_path.string());
+        for (int i = 1; i < argc; ++i)
+            reexec.append(argv[i]);
+
+        if (!reexec.run()) std::exit(1);
         std::exit(0);
     }
 
